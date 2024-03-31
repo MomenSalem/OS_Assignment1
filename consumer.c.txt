@@ -1,0 +1,91 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <signal.h>
+#include <termios.h>
+#define BUFFER_SIZE 10
+struct buffer
+{
+    int memory[BUFFER_SIZE + 3];
+    int pause_cons;
+};
+typedef struct buffer buffer;
+
+int paused = 0;// Initialize the pause flag
+
+void printmemory(buffer *ptr)
+{
+    printf("Memory values are = ");
+    for(int i = 0 ; i < BUFFER_SIZE + 3 ; i++)
+    {
+        if(i == BUFFER_SIZE)
+            printf("in = %d\t", ptr->memory[i]);
+        else if(i == (BUFFER_SIZE + 1))
+            printf("out = %d\t", ptr->memory[i]);
+        else if(i == (BUFFER_SIZE + 2))
+            printf("memory status = %d", ptr->memory[i]);
+        else
+            printf("%d\t", ptr->memory[i]);
+    }
+
+    printf("\n");
+}
+int main()
+{
+
+    //size of shared memory
+    const int SIZE = 4096;
+    //name of shared memory
+    const char *name = "OS";
+    //shared memory file descriptor
+    int shm_fd;
+    //pointer to shared memory object
+    buffer *ptr;
+    //create the shared memory object
+    shm_fd = shm_open(name, O_RDWR, 0666);
+
+    //configure the size of the shared memory object
+
+    //memory map the shared memory object
+    ptr = mmap(0, SIZE, PROT_WRITE | PROT_READ, MAP_SHARED, shm_fd, 0);
+    ptr->pause_cons = 0;
+    //read from the shared memory object
+    if(!ptr)//print error message
+    {
+        printf("There is an error in creating memroy !\n");
+        exit(1);
+    }
+
+    while(1)
+    {
+        if(!ptr->pause_cons)
+        {
+            if(ptr->memory[BUFFER_SIZE + 2] == 0)
+            {
+                ptr->memory[BUFFER_SIZE + 2] = 1;
+
+                /* produce an item in next produced */
+                while (ptr->memory[BUFFER_SIZE] == ptr->memory[BUFFER_SIZE + 1])//while in == out --> the memory is empty wait for producer
+                {
+                    ptr->memory[BUFFER_SIZE + 2] = 0;
+                    sleep(3);//to make the program slower to see output
+                }
+                ptr->memory[BUFFER_SIZE + 2] = 1;//make it 1 after the in and out are not equal (there is content in memory can be read)
+                printmemory(ptr);
+                printf("Consumer read value (%d) at index = %d in memory\n", ptr->memory[ptr->memory[BUFFER_SIZE + 1]], ptr->memory[BUFFER_SIZE + 1]);
+                ptr->memory[BUFFER_SIZE + 1] = (ptr->memory[BUFFER_SIZE + 1] + 1) % BUFFER_SIZE;
+                ptr->memory[BUFFER_SIZE + 2] = 0;
+
+            }
+        }
+    }
+    //remove the shared memory object
+    shm_unlink(name);
+
+    return 0;
+}
